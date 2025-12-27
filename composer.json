@@ -1,6 +1,7 @@
 {
   "name": "since-leoo/hyperf-plugin",
   "type": "library",
+  "license": "MIT",
   "require": {
     "php": ">=8.1",
     "hyperf/command": "^3.1",
