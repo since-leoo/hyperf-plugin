@@ -1,25 +1,35 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin\Tests\Property;
 
 use PHPUnit\Framework\TestCase;
-use SinceLeoo\Plugin\PluginRepository;
 use SinceLeoo\Plugin\ConfigWriter;
 use SinceLeoo\Plugin\Contract\PluginInterface;
-use SinceLeoo\Plugin\Contract\AbstractPlugin;
+use SinceLeoo\Plugin\PluginRepository;
 
 /**
- * Property-based tests for PluginRepository
- * 
+ * Property-based tests for PluginRepository.
+ *
  * Feature: hyperf-plugin-refactor
- * 
+ *
  * These tests verify universal properties that should hold for all valid inputs.
+ * @internal
+ * @coversNothing
  */
 class PluginRepositoryPropertyTest extends TestCase
 {
     private string $tempDir;
+
     private string $configPath;
 
     protected function setUp(): void
@@ -34,53 +44,14 @@ class PluginRepositoryPropertyTest extends TestCase
         $this->removeDirectory($this->tempDir);
     }
 
-    private function removeDirectory(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $files = array_diff(scandir($dir), ['.', '..']);
-        foreach ($files as $file) {
-            $path = $dir . '/' . $file;
-            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
-        }
-        rmdir($dir);
-    }
-
     /**
-     * Create a mock plugin with specified properties
-     */
-    private function createMockPlugin(string $name, int $priority): PluginInterface
-    {
-        $plugin = $this->createMock(PluginInterface::class);
-        $plugin->method('getName')->willReturn($name);
-        $plugin->method('getPriority')->willReturn($priority);
-        $plugin->method('getVersion')->willReturn('1.0.0');
-        $plugin->method('getDescription')->willReturn('Test plugin');
-        $plugin->method('getAuthor')->willReturn('Test Author');
-        $plugin->method('getDependencies')->willReturn([]);
-        
-        return $plugin;
-    }
-
-    /**
-     * Generate random plugin name
-     */
-    private function generateRandomPluginName(int $index): string
-    {
-        $vendors = ['vendor', 'acme', 'example', 'test', 'demo'];
-        $names = ['plugin', 'module', 'extension', 'addon', 'component'];
-        return $vendors[array_rand($vendors)] . '/' . $names[array_rand($names)] . '-' . $index;
-    }
-
-    /**
-     * Property 13: Priority-Based Loading Order
-     * 
+     * Property 13: Priority-Based Loading Order.
+     *
      * *For any* set of enabled plugins with different priorities (from plugin.json),
      * the Plugin_Manager SHALL load them in descending priority order.
-     * 
+     *
      * **Validates: Requirements 9.2, 9.3, 9.4**
-     * 
+     *
      * @dataProvider priorityBasedLoadingOrderProvider
      */
     public function testPriorityBasedLoadingOrder(array $pluginData): void
@@ -109,7 +80,7 @@ class PluginRepositoryPropertyTest extends TestCase
             $this->assertLessThanOrEqual(
                 $previousPriority,
                 $currentPriority,
-                "Plugins should be sorted by priority in descending order"
+                'Plugins should be sorted by priority in descending order'
             );
 
             // If same priority, should be alphabetically ordered
@@ -117,7 +88,7 @@ class PluginRepositoryPropertyTest extends TestCase
                 $this->assertGreaterThanOrEqual(
                     0,
                     strcmp($currentName, $previousName),
-                    "Plugins with same priority should be sorted alphabetically"
+                    'Plugins with same priority should be sorted alphabetically'
                 );
             }
 
@@ -130,7 +101,7 @@ class PluginRepositoryPropertyTest extends TestCase
     }
 
     /**
-     * Data provider for priority-based loading order test - generates 100 test cases
+     * Data provider for priority-based loading order test - generates 100 test cases.
      */
     public static function priorityBasedLoadingOrderProvider(): array
     {
@@ -138,12 +109,12 @@ class PluginRepositoryPropertyTest extends TestCase
         $vendors = ['vendor', 'acme', 'example', 'test', 'demo'];
         $names = ['plugin', 'module', 'extension', 'addon', 'component'];
 
-        for ($i = 0; $i < 100; $i++) {
+        for ($i = 0; $i < 100; ++$i) {
             // Generate 2-10 plugins with random priorities
             $numPlugins = rand(2, 10);
             $pluginData = [];
 
-            for ($j = 0; $j < $numPlugins; $j++) {
+            for ($j = 0; $j < $numPlugins; ++$j) {
                 $pluginData[] = [
                     'name' => $vendors[array_rand($vendors)] . '/' . $names[array_rand($names)] . '-' . $i . '-' . $j,
                     'priority' => rand(-100, 100),
@@ -157,10 +128,10 @@ class PluginRepositoryPropertyTest extends TestCase
     }
 
     /**
-     * Test that default priority (0) is used when not specified
-     * 
+     * Test that default priority (0) is used when not specified.
+     *
      * **Validates: Requirements 9.3**
-     * 
+     *
      * @dataProvider defaultPriorityProvider
      */
     public function testDefaultPriorityIsZero(array $pluginData): void
@@ -187,7 +158,7 @@ class PluginRepositoryPropertyTest extends TestCase
         }
 
         $sortedPlugins = $repository->getByPriority();
-        $sortedNames = array_map(fn($p) => $p->getName(), $sortedPlugins);
+        $sortedNames = array_map(fn ($p) => $p->getName(), $sortedPlugins);
 
         // Verify high priority plugins come before default priority plugins
         foreach ($pluginsWithHighPriority as $highPriorityName) {
@@ -197,7 +168,7 @@ class PluginRepositoryPropertyTest extends TestCase
                 $this->assertLessThan(
                     $defaultPriorityIndex,
                     $highPriorityIndex,
-                    "High priority plugin should come before default priority plugin"
+                    'High priority plugin should come before default priority plugin'
                 );
             }
         }
@@ -210,14 +181,14 @@ class PluginRepositoryPropertyTest extends TestCase
                 $this->assertLessThan(
                     $lowPriorityIndex,
                     $defaultPriorityIndex,
-                    "Default priority plugin should come before low priority plugin"
+                    'Default priority plugin should come before low priority plugin'
                 );
             }
         }
     }
 
     /**
-     * Data provider for default priority test - generates 100 test cases
+     * Data provider for default priority test - generates 100 test cases.
      */
     public static function defaultPriorityProvider(): array
     {
@@ -225,7 +196,7 @@ class PluginRepositoryPropertyTest extends TestCase
         $vendors = ['vendor', 'acme', 'example', 'test', 'demo'];
         $names = ['plugin', 'module', 'extension', 'addon', 'component'];
 
-        for ($i = 0; $i < 100; $i++) {
+        for ($i = 0; $i < 100; ++$i) {
             $pluginData = [];
 
             // Always include at least one plugin with each priority type
@@ -244,7 +215,7 @@ class PluginRepositoryPropertyTest extends TestCase
 
             // Add some random plugins
             $numExtra = rand(0, 5);
-            for ($j = 0; $j < $numExtra; $j++) {
+            for ($j = 0; $j < $numExtra; ++$j) {
                 $pluginData[] = [
                     'name' => $vendors[array_rand($vendors)] . '/' . $names[array_rand($names)] . '-extra-' . $i . '-' . $j,
                     'priority' => rand(-100, 100),
@@ -258,10 +229,10 @@ class PluginRepositoryPropertyTest extends TestCase
     }
 
     /**
-     * Test that same priority plugins are sorted alphabetically
-     * 
+     * Test that same priority plugins are sorted alphabetically.
+     *
      * **Validates: Requirements 9.4**
-     * 
+     *
      * @dataProvider samePriorityAlphabeticalProvider
      */
     public function testSamePriorityPluginsAreSortedAlphabetically(array $pluginNames, int $priority): void
@@ -276,7 +247,7 @@ class PluginRepositoryPropertyTest extends TestCase
         }
 
         $sortedPlugins = $repository->getByPriority();
-        $sortedNames = array_map(fn($p) => $p->getName(), $sortedPlugins);
+        $sortedNames = array_map(fn ($p) => $p->getName(), $sortedPlugins);
 
         // Sort the original names alphabetically for comparison
         $expectedNames = $pluginNames;
@@ -285,23 +256,23 @@ class PluginRepositoryPropertyTest extends TestCase
         $this->assertEquals(
             $expectedNames,
             $sortedNames,
-            "Plugins with same priority should be sorted alphabetically"
+            'Plugins with same priority should be sorted alphabetically'
         );
     }
 
     /**
-     * Data provider for same priority alphabetical test - generates 100 test cases
+     * Data provider for same priority alphabetical test - generates 100 test cases.
      */
     public static function samePriorityAlphabeticalProvider(): array
     {
         $testCases = [];
 
-        for ($i = 0; $i < 100; $i++) {
+        for ($i = 0; $i < 100; ++$i) {
             // Generate 2-8 unique plugin names
             $numPlugins = rand(2, 8);
             $pluginNames = [];
 
-            for ($j = 0; $j < $numPlugins; $j++) {
+            for ($j = 0; $j < $numPlugins; ++$j) {
                 // Use letters to make alphabetical ordering clear
                 $letter = chr(ord('a') + rand(0, 25));
                 $pluginNames[] = $letter . '-vendor/plugin-' . $i . '-' . $j;
@@ -319,7 +290,7 @@ class PluginRepositoryPropertyTest extends TestCase
     }
 
     /**
-     * Test basic repository operations
+     * Test basic repository operations.
      */
     public function testBasicRepositoryOperations(): void
     {
@@ -349,7 +320,7 @@ class PluginRepositoryPropertyTest extends TestCase
     }
 
     /**
-     * Test getEnabled returns only enabled plugins
+     * Test getEnabled returns only enabled plugins.
      */
     public function testGetEnabledReturnsOnlyEnabledPlugins(): void
     {
@@ -374,9 +345,48 @@ class PluginRepositoryPropertyTest extends TestCase
 
         $this->assertCount(2, $enabledPlugins);
 
-        $enabledNames = array_map(fn($p) => $p->getName(), $enabledPlugins);
+        $enabledNames = array_map(fn ($p) => $p->getName(), $enabledPlugins);
         $this->assertContains('vendor/plugin-1', $enabledNames);
         $this->assertContains('vendor/plugin-3', $enabledNames);
         $this->assertNotContains('vendor/plugin-2', $enabledNames);
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (! is_dir($dir)) {
+            return;
+        }
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
+    }
+
+    /**
+     * Create a mock plugin with specified properties.
+     */
+    private function createMockPlugin(string $name, int $priority): PluginInterface
+    {
+        $plugin = $this->createMock(PluginInterface::class);
+        $plugin->method('getName')->willReturn($name);
+        $plugin->method('getPriority')->willReturn($priority);
+        $plugin->method('getVersion')->willReturn('1.0.0');
+        $plugin->method('getDescription')->willReturn('Test plugin');
+        $plugin->method('getAuthor')->willReturn('Test Author');
+        $plugin->method('getDependencies')->willReturn([]);
+
+        return $plugin;
+    }
+
+    /**
+     * Generate random plugin name.
+     */
+    private function generateRandomPluginName(int $index): string
+    {
+        $vendors = ['vendor', 'acme', 'example', 'test', 'demo'];
+        $names = ['plugin', 'module', 'extension', 'addon', 'component'];
+        return $vendors[array_rand($vendors)] . '/' . $names[array_rand($names)] . '-' . $index;
     }
 }

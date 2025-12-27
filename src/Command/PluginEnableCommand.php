@@ -1,21 +1,29 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin\Command;
 
-use Hyperf\Command\Command as HyperfCommand;
 use Hyperf\Command\Annotation\Command;
+use Hyperf\Command\Command as HyperfCommand;
 use Psr\Container\ContainerInterface;
 use SinceLeoo\Plugin\Contract\PluginDiscovererInterface;
 use SinceLeoo\Plugin\Contract\PluginManagerInterface;
 use Symfony\Component\Console\Input\InputArgument;
 
 /**
- * 插件启用命令
- * 
+ * 插件启用命令.
+ *
  * 用于启用已安装的插件。
- * 
+ *
  * @see Requirements 4.1, 4.3, 4.5
  */
 #[Command]
@@ -31,11 +39,6 @@ class PluginEnableCommand extends HyperfCommand
         parent::__construct();
     }
 
-    protected function configure(): void
-    {
-        $this->addArgument('pluginName', InputArgument::REQUIRED, 'The plugin package name to enable');
-    }
-
     public function handle(): int
     {
         $pluginName = $this->input->getArgument('pluginName');
@@ -44,7 +47,7 @@ class PluginEnableCommand extends HyperfCommand
         $discoverer = $this->container->get(PluginDiscovererInterface::class);
 
         // 检查插件是否已安装
-        if (!$discoverer->isInstalled($pluginName)) {
+        if (! $discoverer->isInstalled($pluginName)) {
             $this->error("Plugin '{$pluginName}' is not installed.");
             $this->line('');
             $this->line("Run 'php bin/hyperf.php plugin:install {$pluginName}' to install it first.");
@@ -59,7 +62,7 @@ class PluginEnableCommand extends HyperfCommand
 
         // 检查依赖
         $missingDeps = $pluginManager->checkDependencies($pluginName);
-        if (!empty($missingDeps)) {
+        if (! empty($missingDeps)) {
             $this->error("Cannot enable plugin '{$pluginName}': missing dependencies:");
             foreach ($missingDeps as $dep) {
                 $this->line("  - {$dep}");
@@ -73,15 +76,15 @@ class PluginEnableCommand extends HyperfCommand
         $pluginConfig = $discoverer->getPluginJsonConfig($pluginName);
         $dependencies = $pluginConfig['dependencies'] ?? [];
         $disabledDeps = [];
-        
+
         foreach ($dependencies as $dep) {
-            if ($discoverer->isInstalled($dep) && !$discoverer->isEnabled($dep)) {
+            if ($discoverer->isInstalled($dep) && ! $discoverer->isEnabled($dep)) {
                 $disabledDeps[] = $dep;
             }
         }
 
-        if (!empty($disabledDeps)) {
-            $this->warn("Warning: The following dependencies are installed but not enabled:");
+        if (! empty($disabledDeps)) {
+            $this->warn('Warning: The following dependencies are installed but not enabled:');
             foreach ($disabledDeps as $dep) {
                 $this->line("  - {$dep}");
             }
@@ -102,5 +105,10 @@ class PluginEnableCommand extends HyperfCommand
         $this->error("Failed to enable plugin '{$pluginName}'.");
         $this->line('Check the logs for more details.');
         return self::FAILURE;
+    }
+
+    protected function configure(): void
+    {
+        $this->addArgument('pluginName', InputArgument::REQUIRED, 'The plugin package name to enable');
     }
 }

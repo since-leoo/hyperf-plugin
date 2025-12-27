@@ -1,22 +1,31 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin\Command;
 
-use Hyperf\Command\Command as HyperfCommand;
 use Hyperf\Command\Annotation\Command;
+use Hyperf\Command\Command as HyperfCommand;
 use Psr\Container\ContainerInterface;
 use SinceLeoo\Plugin\Contract\PluginDiscovererInterface;
 use SinceLeoo\Plugin\Contract\PluginManagerInterface;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
+use Throwable;
 
 /**
- * 插件安装命令
- * 
+ * 插件安装命令.
+ *
  * 用于安装项目 plugins 目录中的插件或远程仓库的插件。
- * 
+ *
  * @see Requirements 5.1, 5.2, 5.5, 5.6
  */
 #[Command]
@@ -30,14 +39,6 @@ class PluginInstallCommand extends HyperfCommand
         private ContainerInterface $container
     ) {
         parent::__construct();
-    }
-
-    protected function configure(): void
-    {
-        $this->addArgument('pluginName', InputArgument::REQUIRED, 'The plugin package name to install');
-        $this->addOption('force', 'f', InputOption::VALUE_NONE, 'Force reinstall if already installed');
-        $this->addOption('no-migrate', null, InputOption::VALUE_NONE, 'Skip database migrations');
-        $this->addOption('no-seed', null, InputOption::VALUE_NONE, 'Skip database seeders');
     }
 
     public function handle(): int
@@ -61,7 +62,7 @@ class PluginInstallCommand extends HyperfCommand
                 }
             }
 
-            if (!$found) {
+            if (! $found) {
                 $this->error("Plugin '{$pluginName}' not found in project plugins directory or vendor.");
                 $this->line('');
                 $this->line('Available local plugins:');
@@ -74,17 +75,17 @@ class PluginInstallCommand extends HyperfCommand
 
         // 检查是否已安装
         if ($discoverer->isInstalled($pluginName)) {
-            if (!$force) {
+            if (! $force) {
                 $this->error("Plugin '{$pluginName}' is already installed.");
                 $this->line('Use --force to reinstall.');
                 return self::FAILURE;
             }
 
             $this->warn("Plugin '{$pluginName}' is already installed. Reinstalling...");
-            
+
             // 先卸载
-            if (!$pluginManager->uninstall($pluginName, true)) {
-                $this->error("Failed to uninstall existing plugin for reinstallation.");
+            if (! $pluginManager->uninstall($pluginName, true)) {
+                $this->error('Failed to uninstall existing plugin for reinstallation.');
                 return self::FAILURE;
             }
         }
@@ -96,20 +97,18 @@ class PluginInstallCommand extends HyperfCommand
             return self::FAILURE;
         }
 
-        // 检查依赖
+        // 检查依赖（如果有缺失依赖，会自动安装）
         $missingDeps = $pluginManager->checkDependencies($pluginName);
-        if (!empty($missingDeps)) {
-            $this->error("Plugin '{$pluginName}' has missing dependencies:");
+        if (! empty($missingDeps)) {
+            $this->warn("Plugin '{$pluginName}' has dependencies that will be auto-installed:");
             foreach ($missingDeps as $dep) {
                 $this->line("  - {$dep}");
             }
-            $this->line('');
-            $this->line('Please install the required dependencies first.');
-            return self::FAILURE;
         }
 
         // 构建安装选项
         $options = [
+            'auto_install_deps' => true,
             'skip_migrations' => $this->input->getOption('no-migrate'),
             'skip_seeders' => $this->input->getOption('no-seed'),
         ];
@@ -117,35 +116,50 @@ class PluginInstallCommand extends HyperfCommand
         $this->info("Installing plugin '{$pluginName}'...");
 
         // 执行安装
-        if ($pluginManager->install($pluginName, $options)) {
-            $this->info("Plugin '{$pluginName}' installed successfully.");
-            
-            // 显示插件信息
-            $this->displayPluginInfo($pluginConfig);
-            
-            return self::SUCCESS;
-        }
+        try {
+            $result = $pluginManager->install($pluginName, $options);
 
-        $this->error("Failed to install plugin '{$pluginName}'.");
-        $this->line('Check the logs for more details.');
-        return self::FAILURE;
+            if ($result) {
+                $this->info("Plugin '{$pluginName}' installed successfully.");
+
+                // 显示插件信息
+                $this->displayPluginInfo($pluginConfig);
+
+                return self::SUCCESS;
+            }
+
+            $this->error("Failed to install plugin '{$pluginName}'.");
+            $this->line('Check the logs for more details.');
+            return self::FAILURE;
+        } catch (Throwable $e) {
+            $this->error('Installation exception: ' . $e->getMessage());
+            return self::FAILURE;
+        }
+    }
+
+    protected function configure(): void
+    {
+        $this->addArgument('pluginName', InputArgument::REQUIRED, 'The plugin package name to install');
+        $this->addOption('force', 'f', InputOption::VALUE_NONE, 'Force reinstall if already installed');
+        $this->addOption('no-migrate', null, InputOption::VALUE_NONE, 'Skip database migrations');
+        $this->addOption('no-seed', null, InputOption::VALUE_NONE, 'Skip database seeders');
     }
 
     /**
-     * 显示插件信息
+     * 显示插件信息.
      */
     private function displayPluginInfo(array $config): void
     {
         $this->line('');
         $this->line('Plugin Information:');
         $this->line("  Name:        {$config['name']}");
-        $this->line("  Version:     " . ($config['version'] ?? 'N/A'));
-        
-        if (!empty($config['description'])) {
+        $this->line('  Version:     ' . ($config['version'] ?? 'N/A'));
+
+        if (! empty($config['description'])) {
             $this->line("  Description: {$config['description']}");
         }
-        
-        if (!empty($config['author'])) {
+
+        if (! empty($config['author'])) {
             $this->line("  Author:      {$config['author']}");
         }
 
@@ -153,7 +167,7 @@ class PluginInstallCommand extends HyperfCommand
         $status = $enabled ? '<info>Enabled</info>' : '<comment>Disabled</comment>';
         $this->line("  Status:      {$status}");
 
-        if (!$enabled) {
+        if (! $enabled) {
             $this->line('');
             $this->line("Run 'php bin/hyperf.php plugin:enable {$config['name']}' to enable the plugin.");
         }

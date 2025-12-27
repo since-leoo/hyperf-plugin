@@ -1,11 +1,19 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin\Command;
 
-use Hyperf\Command\Command as HyperfCommand;
 use Hyperf\Command\Annotation\Command;
+use Hyperf\Command\Command as HyperfCommand;
 use Psr\Container\ContainerInterface;
 use SinceLeoo\Plugin\Contract\PluginConfigReaderInterface;
 use SinceLeoo\Plugin\Contract\PluginDiscovererInterface;
@@ -14,10 +22,10 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
- * 插件填充命令
- * 
+ * 插件填充命令.
+ *
  * 用于独立执行插件的数据填充器。
- * 
+ *
  * @see Requirements 14.6
  */
 #[Command]
@@ -33,12 +41,6 @@ class PluginSeedCommand extends HyperfCommand
         parent::__construct();
     }
 
-    protected function configure(): void
-    {
-        $this->addArgument('pluginName', InputArgument::REQUIRED, 'The plugin package name to seed');
-        $this->addOption('no-proxy', null, InputOption::VALUE_NONE, 'Skip proxy class regeneration');
-    }
-
     public function handle(): int
     {
         $pluginName = $this->input->getArgument('pluginName');
@@ -49,7 +51,7 @@ class PluginSeedCommand extends HyperfCommand
         $seederRunner = $this->container->get(SeederRunnerInterface::class);
 
         // 检查插件是否已安装
-        if (!$discoverer->isInstalled($pluginName)) {
+        if (! $discoverer->isInstalled($pluginName)) {
             $this->error("Plugin '{$pluginName}' is not installed.");
             return self::FAILURE;
         }
@@ -62,7 +64,7 @@ class PluginSeedCommand extends HyperfCommand
         }
 
         // 检查是否有填充器目录
-        if (!$configReader->hasSeeders($pluginPath)) {
+        if (! $configReader->hasSeeders($pluginPath)) {
             $this->warn("Plugin '{$pluginName}' does not have a seeders directory.");
             $this->line('Expected directory: Database/Seeders');
             return self::SUCCESS;
@@ -81,16 +83,16 @@ class PluginSeedCommand extends HyperfCommand
             return self::SUCCESS;
         }
 
-        $this->info("Found " . count($seeders) . " seeder(s) for plugin '{$pluginName}':");
+        $this->info('Found ' . count($seeders) . " seeder(s) for plugin '{$pluginName}':");
         foreach ($seeders as $seeder) {
             $this->line("  - {$seeder}");
         }
         $this->line('');
 
-        $this->info("Running seeders...");
+        $this->info('Running seeders...');
 
         // 执行填充器
-        $regenerateProxy = !$noProxy;
+        $regenerateProxy = ! $noProxy;
         $success = $seederRunner->seed($pluginName, $seederPath, $regenerateProxy);
 
         if ($success) {
@@ -98,7 +100,13 @@ class PluginSeedCommand extends HyperfCommand
             return self::SUCCESS;
         }
 
-        $this->warn("Some seeders may have failed. Check the logs for details.");
+        $this->warn('Some seeders may have failed. Check the logs for details.');
         return self::SUCCESS; // 填充器失败不阻塞，返回成功
+    }
+
+    protected function configure(): void
+    {
+        $this->addArgument('pluginName', InputArgument::REQUIRED, 'The plugin package name to seed');
+        $this->addOption('no-proxy', null, InputOption::VALUE_NONE, 'Skip proxy class regeneration');
     }
 }

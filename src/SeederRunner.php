@@ -1,50 +1,45 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin;
 
+use RuntimeException;
+use SinceLeoo\Plugin\Contract\PluginDiscovererInterface;
 use SinceLeoo\Plugin\Contract\SeederRunnerInterface;
-use SinceLeoo\Plugin\Contract\ConfigWriterInterface;
 use Throwable;
 
 /**
- * 填充器执行器 - 实现插件数据填充的执行操作
- * 
- * 负责执行插件的数据填充，包括执行填充器、检查填充状态、
- * 重新生成代理类等操作。填充器在迁移完成后执行。
+ * 填充器执行器 - 直接执行插件数据填充.
+ *
+ * 由于插件的 Seeder 类不在 Composer autoload 中，无法使用 Hyperf 的 db:seed 命令，
+ * 因此直接 require 文件并实例化执行。
  */
 class SeederRunner implements SeederRunnerInterface
 {
-    /**
-     * 配置写入器（用于存储填充器执行状态）
-     */
-    private ConfigWriterInterface $configWriter;
+    private PluginDiscovererInterface $discoverer;
 
-    /**
-     * 日志记录器（可选，使用 Hyperf 的 LoggerInterface 或任何 PSR-3 兼容的日志器）
-     */
-    private ?object $logger;
-
-    public function __construct(ConfigWriterInterface $configWriter, ?object $logger = null)
+    public function __construct(PluginDiscovererInterface $discoverer)
     {
-        $this->configWriter = $configWriter;
-        $this->logger = $logger;
+        $this->discoverer = $discoverer;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function seed(string $packageName, string $seederPath, bool $regenerateProxy = true): bool
     {
-        if ($regenerateProxy) {
-            $this->regenerateProxyClasses();
+        if (! is_dir($seederPath)) {
+            return true;
         }
 
         $seeders = $this->discoverSeeders($seederPath);
-        
         if (empty($seeders)) {
-            $this->updateSeederStatus($packageName, true);
             return true;
         }
 
@@ -54,55 +49,29 @@ class SeederRunner implements SeederRunnerInterface
             try {
                 $this->executeSeeder($seederPath, $seederFile);
             } catch (Throwable $e) {
-                // 填充器失败不阻塞安装，只记录错误
-                $this->log('error', "Seeder execution failed for {$packageName}: {$seederFile}", [
-                    'exception' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                ]);
+                // 记录异常但不阻塞安装
+                error_log("Seeder failed [{$seederFile}]: " . $e->getMessage());
                 $success = false;
             }
         }
 
-        // 无论成功与否都标记为已执行（非阻塞）
-        $this->updateSeederStatus($packageName, true);
-
         return $success;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function hasSeeded(string $packageName): bool
     {
-        $config = $this->configWriter->getConfig();
-        
-        return $config['installed'][$packageName]['seeder_executed'] ?? false;
+        $lockData = $this->readLockFile($packageName);
+        return $lockData['seeder_executed'] ?? false;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function regenerateProxyClasses(): void
     {
-        // 在 Hyperf 环境中，重新生成代理类
-        // 这是为了避免 composer dump -o 后代理类被删除导致类找不到错误
-        if (class_exists('Hyperf\Di\Aop\ProxyManager')) {
-            try {
-                // 尝试调用 Hyperf 的代理类生成器
-                // 实际实现可能需要根据 Hyperf 版本调整
-                $this->log('info', 'Attempting to regenerate proxy classes');
-            } catch (Throwable $e) {
-                $this->log('warning', 'Failed to regenerate proxy classes: ' . $e->getMessage());
-            }
-        }
+        // 插件的 Seeder 不需要代理类
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function discoverSeeders(string $seederPath): array
     {
-        if (!is_dir($seederPath)) {
+        if (! is_dir($seederPath)) {
             return [];
         }
 
@@ -112,70 +81,92 @@ class SeederRunner implements SeederRunnerInterface
         }
 
         $seeders = array_filter($files, function (string $file) use ($seederPath): bool {
-            // 只包含 .php 文件
             if (pathinfo($file, PATHINFO_EXTENSION) !== 'php') {
                 return false;
             }
-            
-            // 排除目录
+
             $fullPath = rtrim($seederPath, '/') . '/' . $file;
             return is_file($fullPath);
         });
 
-        // 按文件名排序
         sort($seeders, SORT_STRING);
 
         return array_values($seeders);
     }
 
     /**
-     * 执行单个填充器文件
-     * 
-     * @param string $seederPath 填充器目录路径
-     * @param string $seederFile 填充器文件名
+     * 执行单个填充器文件.
      */
     private function executeSeeder(string $seederPath, string $seederFile): void
     {
         $fullPath = rtrim($seederPath, '/') . '/' . $seederFile;
-        
-        if (!file_exists($fullPath)) {
+
+        if (! file_exists($fullPath)) {
             return;
         }
 
-        $seeder = require $fullPath;
-        
-        if (is_object($seeder) && method_exists($seeder, 'run')) {
+        $className = $this->extractClassName($fullPath);
+
+        if ($className === null) {
+            return;
+        }
+
+        if (! class_exists($className)) {
+            require_once $fullPath;
+        }
+
+        if (! class_exists($className)) {
+            throw new RuntimeException("Seeder class not found: {$className}");
+        }
+
+        $seeder = new $className();
+
+        if (method_exists($seeder, 'run')) {
             $seeder->run();
         }
     }
 
     /**
-     * 更新配置中的填充器执行状态
-     * 
-     * @param string $packageName 插件包名
-     * @param bool $executed 是否已执行
+     * 从 PHP 文件中提取完整类名（包含命名空间）.
      */
-    private function updateSeederStatus(string $packageName, bool $executed): void
+    private function extractClassName(string $filePath): ?string
     {
-        $config = $this->configWriter->getConfig();
-        
-        $pluginConfig = $config['installed'][$packageName] ?? [];
-        $pluginConfig['seeder_executed'] = $executed;
-        
-        $this->configWriter->updatePluginConfig($packageName, $pluginConfig);
+        $content = file_get_contents($filePath);
+        if ($content === false) {
+            return null;
+        }
+
+        $namespace = '';
+        $class = '';
+
+        if (preg_match('/namespace\s+([^;]+);/', $content, $matches)) {
+            $namespace = trim($matches[1]);
+        }
+
+        if (preg_match('/class\s+(\w+)/', $content, $matches)) {
+            $class = trim($matches[1]);
+        }
+
+        if (empty($class)) {
+            return null;
+        }
+
+        return $namespace ? $namespace . '\\' . $class : $class;
     }
 
-    /**
-     * 记录日志（如果日志器可用）
-     * 
-     * @param string $level 日志级别
-     * @param string $message 日志消息
-     * @param array $context 上下文数据
-     */
-    private function log(string $level, string $message, array $context = []): void
+    private function readLockFile(string $packageName): array
     {
-        if ($this->logger !== null && method_exists($this->logger, $level)) {
-            $this->logger->$level($message, $context);
+        $pluginPath = $this->discoverer->getPluginPath($packageName);
+        if ($pluginPath === null) {
+            return [];
         }
+
+        $lockFile = $pluginPath . '/install.lock';
+        if (! file_exists($lockFile)) {
+            return [];
+        }
+
+        $content = file_get_contents($lockFile);
+        return json_decode($content, true) ?? [];
     }
 }

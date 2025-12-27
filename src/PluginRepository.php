@@ -1,30 +1,39 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin;
 
+use SinceLeoo\Plugin\Contract\ConfigWriterInterface;
 use SinceLeoo\Plugin\Contract\PluginInterface;
 use SinceLeoo\Plugin\Contract\PluginRepositoryInterface;
-use SinceLeoo\Plugin\Contract\ConfigWriterInterface;
 
 /**
- * 插件仓库 - 实现插件实例的存储和检索
- * 
- * 负责管理插件实例的注册、获取、检索等操作，
- * 支持按优先级排序获取插件列表。
+ * 插件仓库 - 实现插件实例的存储和检索.
+ *
+ * 负责管理插件实例的注册、获取、检索等操作。
+ * 插件元数据（名称、优先级等）通过 plugin.json 管理，
+ * 仓库只负责存储运行时的插件实例。
  */
 class PluginRepository implements PluginRepositoryInterface
 {
     /**
-     * 已注册的插件实例
-     * 
+     * 已注册的插件实例.
+     *
      * @var array<string, PluginInterface>
      */
     private array $plugins = [];
 
     /**
-     * 配置写入器（用于检查插件启用状态）
+     * 配置写入器（用于检查插件启用状态）.
      */
     private ConfigWriterInterface $configWriter;
 
@@ -33,82 +42,41 @@ class PluginRepository implements PluginRepositoryInterface
         $this->configWriter = $configWriter;
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function register(PluginInterface $plugin): void
+    public function register(string $packageName, PluginInterface $plugin): void
     {
-        $name = $plugin->getName();
-        $this->plugins[$name] = $plugin;
+        $this->plugins[$packageName] = $plugin;
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function get(string $name): ?PluginInterface
+    public function get(string $packageName): ?PluginInterface
     {
-        return $this->plugins[$name] ?? null;
+        return $this->plugins[$packageName] ?? null;
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function has(string $name): bool
+    public function has(string $packageName): bool
     {
-        return isset($this->plugins[$name]);
+        return isset($this->plugins[$packageName]);
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function all(): array
     {
-        return array_values($this->plugins);
+        return $this->plugins;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function getEnabled(): array
     {
         $config = $this->configWriter->getConfig();
         $enabledConfig = $config['enabled'] ?? [];
 
-        return array_values(array_filter(
+        return array_filter(
             $this->plugins,
-            fn(PluginInterface $plugin) => $enabledConfig[$plugin->getName()] ?? false
-        ));
+            fn (PluginInterface $plugin, string $packageName) => $enabledConfig[$packageName] ?? false,
+            ARRAY_FILTER_USE_BOTH
+        );
     }
 
     /**
-     * {@inheritdoc}
-     * 
-     * 按优先级降序排列（数值越大越先加载）
-     * 相同优先级的插件按名称字母顺序排列
-     */
-    public function getByPriority(): array
-    {
-        $plugins = $this->plugins;
-
-        uasort($plugins, function (PluginInterface $a, PluginInterface $b): int {
-            $priorityA = $a->getPriority();
-            $priorityB = $b->getPriority();
-
-            // 优先级高的排在前面（降序）
-            if ($priorityA !== $priorityB) {
-                return $priorityB <=> $priorityA;
-            }
-
-            // 相同优先级按名称字母顺序排列
-            return strcmp($a->getName(), $b->getName());
-        });
-
-        return array_values($plugins);
-    }
-
-    /**
-     * 清空所有已注册的插件
-     * 
+     * 清空所有已注册的插件.
+     *
      * 主要用于测试目的
      */
     public function clear(): void
@@ -117,8 +85,8 @@ class PluginRepository implements PluginRepositoryInterface
     }
 
     /**
-     * 获取已注册插件的数量
-     * 
+     * 获取已注册插件的数量.
+     *
      * @return int 插件数量
      */
     public function count(): int

@@ -1,28 +1,42 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use SinceLeoo\Plugin\PluginDiscoverer;
-use SinceLeoo\Plugin\PluginConfigReader;
 use SinceLeoo\Plugin\ConfigWriter;
+use SinceLeoo\Plugin\PluginConfigReader;
+use SinceLeoo\Plugin\PluginDiscoverer;
 
 /**
- * Unit tests for PluginDiscoverer
- * 
+ * Unit tests for PluginDiscoverer.
+ *
  * Feature: hyperf-plugin-refactor
- * 
+ *
  * Tests plugin discovery logic and plugin.json parsing.
  * **Validates: Requirements 5.1, 7.1**
+ * @internal
+ * @coversNothing
  */
 class PluginDiscovererTest extends TestCase
 {
     private string $tempDir;
+
     private PluginDiscoverer $discoverer;
+
     private PluginConfigReader $configReader;
+
     private ConfigWriter $configWriter;
+
     private string $configPath;
 
     protected function setUp(): void
@@ -31,7 +45,7 @@ class PluginDiscovererTest extends TestCase
         mkdir($this->tempDir, 0755, true);
         mkdir($this->tempDir . '/plugins', 0755, true);
         mkdir($this->tempDir . '/config/autoload', 0755, true);
-        
+
         $this->configPath = $this->tempDir . '/config/autoload/plugins.php';
         $this->configReader = new PluginConfigReader();
         $this->configWriter = new ConfigWriter($this->configPath);
@@ -48,54 +62,8 @@ class PluginDiscovererTest extends TestCase
         $this->removeDirectory($this->tempDir);
     }
 
-    private function removeDirectory(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $files = array_diff(scandir($dir), ['.', '..']);
-        foreach ($files as $file) {
-            $path = $dir . '/' . $file;
-            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
-        }
-        rmdir($dir);
-    }
-
-
     /**
-     * Create a plugin directory with plugin.json
-     */
-    private function createPluginWithJson(string $name, array $config): string
-    {
-        $pluginPath = $this->tempDir . '/plugins/' . $name;
-        mkdir($pluginPath, 0755, true);
-        
-        file_put_contents(
-            $pluginPath . '/plugin.json',
-            json_encode($config, JSON_PRETTY_PRINT)
-        );
-        
-        return $pluginPath;
-    }
-
-    /**
-     * Create a plugin directory with composer.json only (legacy)
-     */
-    private function createPluginWithComposer(string $name, array $composer): string
-    {
-        $pluginPath = $this->tempDir . '/plugins/' . $name;
-        mkdir($pluginPath, 0755, true);
-        
-        file_put_contents(
-            $pluginPath . '/composer.json',
-            json_encode($composer, JSON_PRETTY_PRINT)
-        );
-        
-        return $pluginPath;
-    }
-
-    /**
-     * Test discovering local plugins with plugin.json
+     * Test discovering local plugins with plugin.json.
      */
     public function testDiscoverLocalPluginsWithPluginJson(): void
     {
@@ -122,7 +90,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test discovering local plugins with composer.json fallback
+     * Test discovering local plugins with composer.json fallback.
      */
     public function testDiscoverLocalPluginsWithComposerFallback(): void
     {
@@ -144,7 +112,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test discovering multiple plugins
+     * Test discovering multiple plugins.
      */
     public function testDiscoverMultiplePlugins(): void
     {
@@ -152,7 +120,7 @@ class PluginDiscovererTest extends TestCase
             'name' => 'vendor/plugin-a',
             'version' => '1.0.0',
         ]);
-        
+
         $this->createPluginWithJson('plugin-b', [
             'name' => 'vendor/plugin-b',
             'version' => '2.0.0',
@@ -161,15 +129,14 @@ class PluginDiscovererTest extends TestCase
         $plugins = $this->discoverer->discoverLocalPlugins();
 
         $this->assertCount(2, $plugins);
-        
+
         $names = array_column($plugins, 'name');
         $this->assertContains('vendor/plugin-a', $names);
         $this->assertContains('vendor/plugin-b', $names);
     }
 
-
     /**
-     * Test empty plugins directory
+     * Test empty plugins directory.
      */
     public function testDiscoverEmptyPluginsDirectory(): void
     {
@@ -178,7 +145,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test non-existent plugins directory
+     * Test non-existent plugins directory.
      */
     public function testDiscoverNonExistentPluginsDirectory(): void
     {
@@ -194,7 +161,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getInstalledPlugins returns empty when no plugins installed
+     * Test getInstalledPlugins returns empty when no plugins installed.
      */
     public function testGetInstalledPluginsEmpty(): void
     {
@@ -203,15 +170,23 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getInstalledPlugins returns installed plugins
+     * Test getInstalledPlugins returns installed plugins (via install.lock).
      */
     public function testGetInstalledPluginsReturnsInstalled(): void
     {
-        $this->configWriter->updatePluginConfig('vendor/test-plugin', [
+        // Create plugin with install.lock file
+        $pluginPath = $this->createPluginWithJson('test-plugin', [
+            'name' => 'vendor/test-plugin',
             'version' => '1.0.0',
-            'path' => '/path/to/plugin',
-            'installed_at' => '2024-01-01 00:00:00',
         ]);
+
+        // Create install.lock file to mark as installed
+        file_put_contents($pluginPath . '/install.lock', json_encode([
+            'installed_at' => '2024-01-01 00:00:00',
+            'version' => '1.0.0',
+            'migrations_executed' => [],
+            'seeder_executed' => false,
+        ]));
 
         $installed = $this->discoverer->getInstalledPlugins();
 
@@ -220,19 +195,27 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test isInstalled returns true for installed plugin
+     * Test isInstalled returns true for installed plugin (via install.lock).
      */
     public function testIsInstalledReturnsTrueForInstalledPlugin(): void
     {
-        $this->configWriter->updatePluginConfig('vendor/test-plugin', [
+        // Create plugin with install.lock file
+        $pluginPath = $this->createPluginWithJson('test-plugin', [
+            'name' => 'vendor/test-plugin',
             'version' => '1.0.0',
         ]);
+
+        // Create install.lock file
+        file_put_contents($pluginPath . '/install.lock', json_encode([
+            'installed_at' => '2024-01-01 00:00:00',
+            'version' => '1.0.0',
+        ]));
 
         $this->assertTrue($this->discoverer->isInstalled('vendor/test-plugin'));
     }
 
     /**
-     * Test isInstalled returns false for non-installed plugin
+     * Test isInstalled returns false for non-installed plugin.
      */
     public function testIsInstalledReturnsFalseForNonInstalledPlugin(): void
     {
@@ -240,7 +223,21 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test isEnabled returns true for enabled plugin
+     * Test isInstalled returns false for plugin without install.lock.
+     */
+    public function testIsInstalledReturnsFalseForPluginWithoutLockFile(): void
+    {
+        // Create plugin without install.lock file
+        $this->createPluginWithJson('test-plugin', [
+            'name' => 'vendor/test-plugin',
+            'version' => '1.0.0',
+        ]);
+
+        $this->assertFalse($this->discoverer->isInstalled('vendor/test-plugin'));
+    }
+
+    /**
+     * Test isEnabled returns true for enabled plugin.
      */
     public function testIsEnabledReturnsTrueForEnabledPlugin(): void
     {
@@ -250,7 +247,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test isEnabled returns false for disabled plugin
+     * Test isEnabled returns false for disabled plugin.
      */
     public function testIsEnabledReturnsFalseForDisabledPlugin(): void
     {
@@ -260,16 +257,15 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test isEnabled returns false for non-configured plugin
+     * Test isEnabled returns false for non-configured plugin.
      */
     public function testIsEnabledReturnsFalseForNonConfiguredPlugin(): void
     {
         $this->assertFalse($this->discoverer->isEnabled('vendor/non-existent'));
     }
 
-
     /**
-     * Test getPluginJsonConfig returns config for local plugin
+     * Test getPluginJsonConfig returns config for local plugin.
      */
     public function testGetPluginJsonConfigForLocalPlugin(): void
     {
@@ -287,7 +283,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getPluginJsonConfig returns empty for non-existent plugin
+     * Test getPluginJsonConfig returns empty for non-existent plugin.
      */
     public function testGetPluginJsonConfigReturnsEmptyForNonExistent(): void
     {
@@ -296,7 +292,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getPluginPath returns path for local plugin
+     * Test getPluginPath returns path for local plugin.
      */
     public function testGetPluginPathForLocalPlugin(): void
     {
@@ -311,17 +307,12 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getPluginPath returns path from installed config
+     * Test getPluginPath returns path from vendor directory.
      */
-    public function testGetPluginPathFromInstalledConfig(): void
+    public function testGetPluginPathFromVendorDirectory(): void
     {
         $pluginPath = $this->tempDir . '/vendor/vendor/installed-plugin';
         mkdir($pluginPath, 0755, true);
-        
-        $this->configWriter->updatePluginConfig('vendor/installed-plugin', [
-            'version' => '1.0.0',
-            'path' => $pluginPath,
-        ]);
 
         $path = $this->discoverer->getPluginPath('vendor/installed-plugin');
 
@@ -329,7 +320,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getPluginPath returns null for non-existent plugin
+     * Test getPluginPath returns null for non-existent plugin.
      */
     public function testGetPluginPathReturnsNullForNonExistent(): void
     {
@@ -338,20 +329,20 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test plugin.json takes priority over composer.json
+     * Test plugin.json takes priority over composer.json.
      */
     public function testPluginJsonTakesPriorityOverComposerJson(): void
     {
         $pluginPath = $this->tempDir . '/plugins/priority-test';
         mkdir($pluginPath, 0755, true);
-        
+
         // Create both plugin.json and composer.json
         file_put_contents($pluginPath . '/plugin.json', json_encode([
             'name' => 'vendor/plugin-json-name',
             'version' => '2.0.0',
             'description' => 'From plugin.json',
         ]));
-        
+
         file_put_contents($pluginPath . '/composer.json', json_encode([
             'name' => 'vendor/composer-json-name',
             'version' => '1.0.0',
@@ -367,18 +358,20 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test discovered plugins reflect installed status
+     * Test discovered plugins reflect installed status (via install.lock).
      */
     public function testDiscoveredPluginsReflectInstalledStatus(): void
     {
-        $this->createPluginWithJson('test-plugin', [
+        $pluginPath = $this->createPluginWithJson('test-plugin', [
             'name' => 'vendor/test-plugin',
             'version' => '1.0.0',
         ]);
-        
-        $this->configWriter->updatePluginConfig('vendor/test-plugin', [
+
+        // Create install.lock file to mark as installed
+        file_put_contents($pluginPath . '/install.lock', json_encode([
+            'installed_at' => '2024-01-01 00:00:00',
             'version' => '1.0.0',
-        ]);
+        ]));
 
         $plugins = $this->discoverer->discoverLocalPlugins();
 
@@ -387,7 +380,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test discovered plugins reflect enabled status
+     * Test discovered plugins reflect enabled status.
      */
     public function testDiscoveredPluginsReflectEnabledStatus(): void
     {
@@ -395,7 +388,7 @@ class PluginDiscovererTest extends TestCase
             'name' => 'vendor/test-plugin',
             'version' => '1.0.0',
         ]);
-        
+
         $this->configWriter->setPluginEnabled('vendor/test-plugin', true);
 
         $plugins = $this->discoverer->discoverLocalPlugins();
@@ -405,7 +398,7 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getBasePath returns configured base path
+     * Test getBasePath returns configured base path.
      */
     public function testGetBasePathReturnsConfiguredPath(): void
     {
@@ -413,10 +406,55 @@ class PluginDiscovererTest extends TestCase
     }
 
     /**
-     * Test getPluginsDir returns configured plugins directory
+     * Test getPluginsDir returns configured plugins directory.
      */
     public function testGetPluginsDirReturnsConfiguredDir(): void
     {
         $this->assertEquals('plugins', $this->discoverer->getPluginsDir());
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (! is_dir($dir)) {
+            return;
+        }
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
+    }
+
+    /**
+     * Create a plugin directory with plugin.json.
+     */
+    private function createPluginWithJson(string $name, array $config): string
+    {
+        $pluginPath = $this->tempDir . '/plugins/' . $name;
+        mkdir($pluginPath, 0755, true);
+
+        file_put_contents(
+            $pluginPath . '/plugin.json',
+            json_encode($config, JSON_PRETTY_PRINT)
+        );
+
+        return $pluginPath;
+    }
+
+    /**
+     * Create a plugin directory with composer.json only (legacy).
+     */
+    private function createPluginWithComposer(string $name, array $composer): string
+    {
+        $pluginPath = $this->tempDir . '/plugins/' . $name;
+        mkdir($pluginPath, 0755, true);
+
+        file_put_contents(
+            $pluginPath . '/composer.json',
+            json_encode($composer, JSON_PRETTY_PRINT)
+        );
+
+        return $pluginPath;
     }
 }

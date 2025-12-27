@@ -1,117 +1,151 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin;
 
+use Hyperf\Context\ApplicationContext;
+use Hyperf\Contract\ApplicationInterface;
+use RuntimeException;
 use SinceLeoo\Plugin\Contract\MigrationRunnerInterface;
-use SinceLeoo\Plugin\Contract\ConfigWriterInterface;
+use SinceLeoo\Plugin\Contract\PluginDiscovererInterface;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Throwable;
 
 /**
- * 迁移执行器 - 实现插件数据库迁移的执行操作
- * 
- * 负责执行插件的数据库迁移，包括执行待执行迁移、回滚已执行迁移、
- * 获取迁移状态等操作。迁移按文件名升序执行，回滚按文件名降序执行。
+ * 迁移执行器 - 使用 Hyperf migrate 命令执行插件数据库迁移.
+ *
+ * 通过调用 Hyperf 的 migrate 命令来执行迁移，迁移记录由 Hyperf 自动管理。
  */
 class MigrationRunner implements MigrationRunnerInterface
 {
     /**
-     * 配置写入器（用于存储迁移执行状态）
+     * 插件发现器（用于获取插件路径）.
      */
-    private ConfigWriterInterface $configWriter;
+    private PluginDiscovererInterface $discoverer;
 
-    public function __construct(ConfigWriterInterface $configWriter)
+    public function __construct(PluginDiscovererInterface $discoverer)
     {
-        $this->configWriter = $configWriter;
+        $this->discoverer = $discoverer;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function migrate(string $packageName, string $migrationPath): array
     {
-        $pendingMigrations = $this->getPendingMigrations($packageName, $migrationPath);
-        
-        if (empty($pendingMigrations)) {
+        if (! is_dir($migrationPath)) {
             return [];
         }
 
-        $executedMigrations = [];
-
-        foreach ($pendingMigrations as $migrationFile) {
-            $this->executeMigration($migrationPath, $migrationFile);
-            $executedMigrations[] = $migrationFile;
+        $migrations = $this->discoverMigrations($migrationPath);
+        if (empty($migrations)) {
+            return [];
         }
 
-        // 更新配置中的已执行迁移列表
-        $this->updateExecutedMigrations($packageName, $executedMigrations);
+        try {
+            $container = ApplicationContext::getContainer();
+            $application = $container->get(ApplicationInterface::class);
 
-        return $executedMigrations;
+            // Hyperf migrate 命令的 --path 需要相对路径，使用 --realpath 支持绝对路径
+            $input = new ArrayInput([
+                'command' => 'migrate',
+                '--path' => $migrationPath,
+                '--realpath' => true,
+            ]);
+
+            $output = new BufferedOutput();
+            $application->setAutoExit(false);
+            $exitCode = $application->run($input, $output);
+
+            $outputContent = $output->fetch();
+
+            if ($exitCode === 0) {
+                return $migrations;
+            }
+
+            // 如果有输出，记录下来便于调试
+            if (! empty($outputContent)) {
+                throw new RuntimeException('Migration failed: ' . $outputContent);
+            }
+
+            return [];
+        } catch (Throwable $e) {
+            // 如果命令执行失败，抛出异常让上层处理
+            throw $e;
+        }
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function rollback(string $packageName, string $migrationPath): array
     {
-        $executedMigrations = $this->getExecutedMigrations($packageName);
-        
-        if (empty($executedMigrations)) {
+        if (! is_dir($migrationPath)) {
             return [];
         }
 
-        // 按文件名降序排列进行回滚
-        $migrationsToRollback = $executedMigrations;
-        rsort($migrationsToRollback, SORT_STRING);
-
-        $rolledBackMigrations = [];
-
-        foreach ($migrationsToRollback as $migrationFile) {
-            $this->executeRollback($migrationPath, $migrationFile);
-            $rolledBackMigrations[] = $migrationFile;
+        $migrations = $this->discoverMigrations($migrationPath);
+        if (empty($migrations)) {
+            return [];
         }
 
-        // 清除配置中的已执行迁移列表
-        $this->clearExecutedMigrations($packageName);
+        try {
+            $container = ApplicationContext::getContainer();
+            $application = $container->get(ApplicationInterface::class);
 
-        return $rolledBackMigrations;
+            // 回滚该路径下的所有迁移，使用 --realpath 支持绝对路径
+            $input = new ArrayInput([
+                'command' => 'migrate:rollback',
+                '--path' => $migrationPath,
+                '--realpath' => true,
+                '--step' => count($migrations), // 回滚所有
+            ]);
+
+            $output = new BufferedOutput();
+            $application->setAutoExit(false);
+            $exitCode = $application->run($input, $output);
+
+            if ($exitCode === 0) {
+                return $migrations;
+            }
+
+            return [];
+        } catch (Throwable $e) {
+            throw $e;
+        }
     }
 
     /**
      * {@inheritdoc}
+     *
+     * 注意：使用 Hyperf migrate 命令时，迁移记录由 Hyperf 的 migrations 表管理
      */
     public function getExecutedMigrations(string $packageName): array
     {
-        $config = $this->configWriter->getConfig();
-        
-        return $config['installed'][$packageName]['migrations_executed'] ?? [];
+        // Hyperf 自己管理迁移记录，这里返回空数组
+        // 如果需要查询，可以从 migrations 表中查询
+        return [];
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function getPendingMigrations(string $packageName, string $migrationPath): array
     {
-        $allMigrations = $this->discoverMigrations($migrationPath);
-        $executedMigrations = $this->getExecutedMigrations($packageName);
-
-        $pendingMigrations = array_diff($allMigrations, $executedMigrations);
-        
-        // 按文件名升序排列
-        sort($pendingMigrations, SORT_STRING);
-
-        return array_values($pendingMigrations);
+        // Hyperf 的 migrate 命令会自动处理待执行的迁移
+        return $this->discoverMigrations($migrationPath);
     }
 
     /**
-     * 发现迁移目录中的所有迁移文件
-     * 
+     * 发现迁移目录中的所有迁移文件.
+     *
      * @param string $migrationPath 迁移目录路径
      * @return array 迁移文件名列表（按文件名升序排列）
      */
     public function discoverMigrations(string $migrationPath): array
     {
-        if (!is_dir($migrationPath)) {
+        if (! is_dir($migrationPath)) {
             return [];
         }
 
@@ -125,7 +159,7 @@ class MigrationRunner implements MigrationRunnerInterface
             if (pathinfo($file, PATHINFO_EXTENSION) !== 'php') {
                 return false;
             }
-            
+
             // 排除目录
             $fullPath = rtrim($migrationPath, '/') . '/' . $file;
             return is_file($fullPath);
@@ -135,82 +169,5 @@ class MigrationRunner implements MigrationRunnerInterface
         sort($migrations, SORT_STRING);
 
         return array_values($migrations);
-    }
-
-    /**
-     * 执行单个迁移文件
-     * 
-     * @param string $migrationPath 迁移目录路径
-     * @param string $migrationFile 迁移文件名
-     */
-    private function executeMigration(string $migrationPath, string $migrationFile): void
-    {
-        $fullPath = rtrim($migrationPath, '/') . '/' . $migrationFile;
-        
-        if (!file_exists($fullPath)) {
-            return;
-        }
-
-        $migration = require $fullPath;
-        
-        if (is_object($migration) && method_exists($migration, 'up')) {
-            $migration->up();
-        }
-    }
-
-    /**
-     * 执行单个迁移文件的回滚
-     * 
-     * @param string $migrationPath 迁移目录路径
-     * @param string $migrationFile 迁移文件名
-     */
-    private function executeRollback(string $migrationPath, string $migrationFile): void
-    {
-        $fullPath = rtrim($migrationPath, '/') . '/' . $migrationFile;
-        
-        if (!file_exists($fullPath)) {
-            return;
-        }
-
-        $migration = require $fullPath;
-        
-        if (is_object($migration) && method_exists($migration, 'down')) {
-            $migration->down();
-        }
-    }
-
-    /**
-     * 更新配置中的已执行迁移列表
-     * 
-     * @param string $packageName 插件包名
-     * @param array $newMigrations 新执行的迁移列表
-     */
-    private function updateExecutedMigrations(string $packageName, array $newMigrations): void
-    {
-        $config = $this->configWriter->getConfig();
-        
-        $existingMigrations = $config['installed'][$packageName]['migrations_executed'] ?? [];
-        $allMigrations = array_unique(array_merge($existingMigrations, $newMigrations));
-        sort($allMigrations, SORT_STRING);
-
-        $pluginConfig = $config['installed'][$packageName] ?? [];
-        $pluginConfig['migrations_executed'] = array_values($allMigrations);
-        
-        $this->configWriter->updatePluginConfig($packageName, $pluginConfig);
-    }
-
-    /**
-     * 清除配置中的已执行迁移列表
-     * 
-     * @param string $packageName 插件包名
-     */
-    private function clearExecutedMigrations(string $packageName): void
-    {
-        $config = $this->configWriter->getConfig();
-        
-        $pluginConfig = $config['installed'][$packageName] ?? [];
-        $pluginConfig['migrations_executed'] = [];
-        
-        $this->configWriter->updatePluginConfig($packageName, $pluginConfig);
     }
 }

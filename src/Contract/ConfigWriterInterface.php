@@ -1,43 +1,29 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin\Contract;
 
 /**
- * 配置写入器接口 - 定义插件配置文件的读写操作
- * 
- * 负责安全地读写插件配置文件，确保生成有效的 PHP 数组语法，
- * 并在更新时保留现有配置。
+ * 配置写入器接口 - 定义插件配置的读写操作.
+ *
+ * 负责读取全局插件配置（如插件目录路径等）。
+ * 插件的启用状态由各插件的 plugin.json 管理。
+ * 安装状态由 install.lock 文件管理。
  */
 interface ConfigWriterInterface
 {
     /**
-     * 更新插件配置
-     * 
-     * @param string $packageName 插件包名
-     * @param array $config 插件配置数组
-     */
-    public function updatePluginConfig(string $packageName, array $config): void;
-
-    /**
-     * 移除插件配置
-     * 
-     * @param string $packageName 插件包名
-     */
-    public function removePluginConfig(string $packageName): void;
-
-    /**
-     * 设置插件启用状态
-     * 
-     * @param string $packageName 插件包名
-     * @param bool $enabled 是否启用
-     */
-    public function setPluginEnabled(string $packageName, bool $enabled): void;
-
-    /**
-     * 获取完整配置
-     * 
+     * 获取完整配置.
+     *
      * @return array 完整的插件配置数组
      */
     public function getConfig(): array;

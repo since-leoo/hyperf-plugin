@@ -4,11 +4,14 @@
   "require": {
     "php": ">=8.1",
     "hyperf/command": "^3.1",
+    "hyperf/db-connection": "^3.1",
+    "hyperf/database": "^3.1",
     "symfony/process": "^6.0",
     "hyperf/utils": "^3.1"
   },
   "require-dev": {
-    "phpunit/phpunit": "^10.0"
+    "phpunit/phpunit": "^10.0",
+    "friendsofphp/php-cs-fixer": "^3.0"
   },
   "autoload": {
     "psr-4": {
@@ -25,7 +28,9 @@
       "config": "SinceLeoo\\Plugin\\ConfigProvider"
     }
   },
-  "scripts": {
-    "test": "phpunit"
+  "scripts":
+  {
+    "test": "phpunit",
+    "cs-fix": "php-cs-fixer fix $1"
   }
 }
