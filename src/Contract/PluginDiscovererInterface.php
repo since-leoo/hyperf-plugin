@@ -81,4 +81,19 @@ interface PluginDiscovererInterface
      * @return null|string 插件路径，不存在则返回 null
      */
     public function getPluginPath(string $packageName): ?string;
+
+    /**
+     * 注册插件的 PSR-4 自动加载.
+     *
+     * @param string $pluginPath 插件路径
+     * @param array $pluginConfig 插件配置
+     */
+    public function registerPluginAutoload(string $pluginPath, array $pluginConfig): void;
+
+    /**
+     * 获取项目根路径.
+     *
+     * @return string 项目根路径
+     */
+    public function getBasePath(): string;
 }

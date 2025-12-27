@@ -148,6 +148,10 @@ class PluginDiscoverer implements PluginDiscovererInterface
         $pluginConfig = $this->configReader->read($pluginPath);
         if (! empty($pluginConfig['configProvider'])) {
             $configProvider = $pluginConfig['configProvider'];
+
+            // 先注册自动加载
+            $this->registerPluginAutoload($pluginPath, $pluginConfig);
+
             if (is_string($configProvider) && class_exists($configProvider)) {
                 return $configProvider;
             }
@@ -166,13 +170,49 @@ class PluginDiscoverer implements PluginDiscovererInterface
         // 优先从 plugin.json 读取 namespace
         $pluginConfig = $this->configReader->read($pluginPath);
         if (! empty($pluginConfig['namespace'])) {
-            $pluginClass = rtrim($pluginConfig['namespace'], '\\') . '\Plugin';
+            // 先注册自动加载
+            $this->registerPluginAutoload($pluginPath, $pluginConfig);
+
+            $pluginClass = rtrim($pluginConfig['namespace'], '\\') . '\\Plugin';
             if (class_exists($pluginClass)) {
                 return $pluginClass;
             }
         }
 
         return null;
+    }
+
+    /**
+     * 注册插件的 PSR-4 自动加载.
+     *
+     * @param string $pluginPath 插件路径
+     * @param array $pluginConfig 插件配置
+     */
+    public function registerPluginAutoload(string $pluginPath, array $pluginConfig): void
+    {
+        if (empty($pluginConfig['namespace'])) {
+            return;
+        }
+
+        $namespace = rtrim($pluginConfig['namespace'], '\\') . '\\';
+        $srcPath = $pluginPath . '/src/';
+
+        if (! is_dir($srcPath)) {
+            return;
+        }
+
+        // 使用 Composer 的 ClassLoader 注册 PSR-4 自动加载
+        $composerAutoload = $this->basePath . '/vendor/autoload.php';
+        if (file_exists($composerAutoload)) {
+            $loader = require $composerAutoload;
+            if ($loader instanceof \Composer\Autoload\ClassLoader) {
+                // 检查是否已注册
+                $prefixes = $loader->getPrefixesPsr4();
+                if (! isset($prefixes[$namespace])) {
+                    $loader->addPsr4($namespace, $srcPath);
+                }
+            }
+        }
     }
 
     public function getPluginJsonConfig(string $packageName): array

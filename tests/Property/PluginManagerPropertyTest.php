@@ -298,14 +298,15 @@ class PluginManagerPropertyTest extends TestCase
             'dependencies' => [$dependencyName],
         ]);
 
-        $missing = $this->manager->checkDependencies($dependentName);
-        $this->assertContains($dependencyName, $missing);
+        $result = $this->manager->checkDependencies($dependentName);
+        $this->assertContains($dependencyName, $result['missing']);
 
-        $this->createTestPlugin($dependencyName);
+        $this->createTestPlugin($dependencyName, ['enabled' => true]);
         $this->manager->install($dependencyName);
 
-        $missing = $this->manager->checkDependencies($dependentName);
-        $this->assertEmpty($missing);
+        $result = $this->manager->checkDependencies($dependentName);
+        $this->assertEmpty($result['missing']);
+        $this->assertEmpty($result['disabled']);
     }
 
     private function removeDirectory(string $dir): void
