@@ -12,8 +12,6 @@ declare(strict_types=1);
 
 namespace SinceLeoo\Plugin;
 
-use SinceLeoo\Plugin\Command\PluginDisableCommand;
-use SinceLeoo\Plugin\Command\PluginEnableCommand;
 use SinceLeoo\Plugin\Command\PluginInstallCommand;
 use SinceLeoo\Plugin\Command\PluginListCommand;
 use SinceLeoo\Plugin\Command\PluginMakeCommand;
@@ -44,8 +42,6 @@ class ConfigProvider
             'commands' => [
                 PluginInstallCommand::class,
                 PluginUnInstallCommand::class,
-                PluginEnableCommand::class,
-                PluginDisableCommand::class,
                 PluginListCommand::class,
                 PluginSeedCommand::class,
                 PluginMakeCommand::class,
