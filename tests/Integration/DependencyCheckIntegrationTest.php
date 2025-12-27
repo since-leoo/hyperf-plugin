@@ -103,11 +103,12 @@ class DependencyCheckIntegrationTest extends TestCase
         ]);
 
         // Check dependencies (none installed)
-        $missing = $this->manager->checkDependencies($packageName);
+        $result = $this->manager->checkDependencies($packageName);
 
-        $this->assertCount(2, $missing);
-        $this->assertContains($dependency1, $missing);
-        $this->assertContains($dependency2, $missing);
+        $this->assertCount(2, $result['missing']);
+        $this->assertContains($dependency1, $result['missing']);
+        $this->assertContains($dependency2, $result['missing']);
+        $this->assertEmpty($result['disabled']);
     }
 
     /**
@@ -120,8 +121,8 @@ class DependencyCheckIntegrationTest extends TestCase
         $packageName = 'vendor/dependent-plugin';
         $dependency = 'vendor/dependency-plugin';
 
-        // Create and install dependency
-        $this->createTestPlugin($dependency);
+        // Create and install dependency (enabled)
+        $this->createTestPlugin($dependency, ['enabled' => true]);
         $this->manager->install($dependency);
 
         // Create plugin with dependency
@@ -129,10 +130,11 @@ class DependencyCheckIntegrationTest extends TestCase
             'dependencies' => [$dependency],
         ]);
 
-        // Check dependencies (all installed)
-        $missing = $this->manager->checkDependencies($packageName);
+        // Check dependencies (all installed and enabled)
+        $result = $this->manager->checkDependencies($packageName);
 
-        $this->assertEmpty($missing);
+        $this->assertEmpty($result['missing']);
+        $this->assertEmpty($result['disabled']);
     }
 
     /**
@@ -146,8 +148,8 @@ class DependencyCheckIntegrationTest extends TestCase
         $installedDep = 'vendor/installed-dep';
         $missingDep = 'vendor/missing-dep';
 
-        // Create and install one dependency
-        $this->createTestPlugin($installedDep);
+        // Create and install one dependency (enabled)
+        $this->createTestPlugin($installedDep, ['enabled' => true]);
         $this->manager->install($installedDep);
 
         // Create plugin with both dependencies
@@ -156,11 +158,39 @@ class DependencyCheckIntegrationTest extends TestCase
         ]);
 
         // Check dependencies
-        $missing = $this->manager->checkDependencies($packageName);
+        $result = $this->manager->checkDependencies($packageName);
 
-        $this->assertCount(1, $missing);
-        $this->assertContains($missingDep, $missing);
-        $this->assertNotContains($installedDep, $missing);
+        $this->assertCount(1, $result['missing']);
+        $this->assertContains($missingDep, $result['missing']);
+        $this->assertNotContains($installedDep, $result['missing']);
+        $this->assertEmpty($result['disabled']);
+    }
+
+    /**
+     * Test checkDependencies returns disabled dependencies.
+     *
+     * **Validates: Requirements 8.1**
+     */
+    public function testCheckDependenciesReturnsDisabledDependencies(): void
+    {
+        $packageName = 'vendor/dependent-plugin';
+        $dependency = 'vendor/disabled-dep';
+
+        // Create and install dependency (disabled)
+        $this->createTestPlugin($dependency, ['enabled' => false]);
+        $this->manager->install($dependency);
+
+        // Create plugin with dependency
+        $this->createTestPlugin($packageName, [
+            'dependencies' => [$dependency],
+        ]);
+
+        // Check dependencies
+        $result = $this->manager->checkDependencies($packageName);
+
+        $this->assertEmpty($result['missing']);
+        $this->assertCount(1, $result['disabled']);
+        $this->assertContains($dependency, $result['disabled']);
     }
 
     /**
@@ -194,13 +224,14 @@ class DependencyCheckIntegrationTest extends TestCase
         $dependency = 'vendor/base-plugin';
         $packageName = 'vendor/dependent-plugin';
 
-        // Create and install dependency first
-        $this->createTestPlugin($dependency);
+        // Create and install dependency first (enabled)
+        $this->createTestPlugin($dependency, ['enabled' => true]);
         $this->manager->install($dependency);
 
-        // Create and install dependent plugin
+        // Create and install dependent plugin (enabled)
         $this->createTestPlugin($packageName, [
             'dependencies' => [$dependency],
+            'enabled' => true,
         ]);
 
         $result = $this->manager->install($packageName);
@@ -219,13 +250,14 @@ class DependencyCheckIntegrationTest extends TestCase
         $basePlugin = 'vendor/base-plugin';
         $dependentPlugin = 'vendor/dependent-plugin';
 
-        // Create and install base plugin
-        $this->createTestPlugin($basePlugin);
+        // Create and install base plugin (enabled)
+        $this->createTestPlugin($basePlugin, ['enabled' => true]);
         $this->manager->install($basePlugin);
 
-        // Create and install dependent plugin
+        // Create and install dependent plugin (enabled)
         $this->createTestPlugin($dependentPlugin, [
             'dependencies' => [$basePlugin],
+            'enabled' => true,
         ]);
         $this->manager->install($dependentPlugin);
 
@@ -246,13 +278,14 @@ class DependencyCheckIntegrationTest extends TestCase
         $basePlugin = 'vendor/base-plugin';
         $dependentPlugin = 'vendor/dependent-plugin';
 
-        // Create and install base plugin
-        $this->createTestPlugin($basePlugin);
+        // Create and install base plugin (enabled)
+        $this->createTestPlugin($basePlugin, ['enabled' => true]);
         $this->manager->install($basePlugin);
 
-        // Create and install dependent plugin
+        // Create and install dependent plugin (enabled)
         $this->createTestPlugin($dependentPlugin, [
             'dependencies' => [$basePlugin],
+            'enabled' => true,
         ]);
         $this->manager->install($dependentPlugin);
 
@@ -267,93 +300,6 @@ class DependencyCheckIntegrationTest extends TestCase
     }
 
     /**
-     * Test disabling plugin warns about dependent plugins.
-     *
-     * **Validates: Requirements 8.2**
-     */
-    public function testDisablingPluginWithDependents(): void
-    {
-        $basePlugin = 'vendor/base-plugin';
-        $dependentPlugin = 'vendor/dependent-plugin';
-
-        // Create and install base plugin (enabled)
-        $this->createTestPlugin($basePlugin, ['enabled' => true]);
-        $this->manager->install($basePlugin);
-
-        // Create and install dependent plugin (enabled)
-        $this->createTestPlugin($dependentPlugin, [
-            'dependencies' => [$basePlugin],
-            'enabled' => true,
-        ]);
-        $this->manager->install($dependentPlugin);
-
-        // Disable base plugin (should succeed with warning, not block)
-        $result = $this->manager->disable($basePlugin);
-
-        // Disabling should succeed (only warns, doesn't block)
-        $this->assertTrue($result, 'Disabling should succeed (with warning)');
-        $this->assertFalse($this->discoverer->isEnabled($basePlugin));
-    }
-
-    /**
-     * Test enabling plugin with missing dependencies fails.
-     *
-     * **Validates: Requirements 8.2**
-     */
-    public function testEnablingPluginWithMissingDependenciesFails(): void
-    {
-        $packageName = 'vendor/dependent-plugin';
-        $dependency = 'vendor/missing-dependency';
-
-        // Create plugin with dependency
-        $pluginDir = $this->createTestPlugin($packageName, [
-            'dependencies' => [$dependency],
-        ]);
-
-        // Manually create install.lock to simulate installed state without checking dependencies
-        file_put_contents($pluginDir . '/install.lock', json_encode([
-            'installed_at' => date('Y-m-d H:i:s'),
-            'version' => '1.0.0',
-            'migrations_executed' => [],
-            'seeder_executed' => false,
-        ]));
-
-        // Try to enable
-        $result = $this->manager->enable($packageName);
-
-        $this->assertFalse($result, 'Enabling should fail with missing dependencies');
-        $this->assertFalse($this->discoverer->isEnabled($packageName));
-    }
-
-    /**
-     * Test enabling plugin with satisfied dependencies succeeds.
-     *
-     * **Validates: Requirements 8.2**
-     */
-    public function testEnablingPluginWithSatisfiedDependenciesSucceeds(): void
-    {
-        $dependency = 'vendor/base-plugin';
-        $packageName = 'vendor/dependent-plugin';
-
-        // Create and install dependency
-        $this->createTestPlugin($dependency);
-        $this->manager->install($dependency);
-
-        // Create and install dependent plugin (disabled by default)
-        $this->createTestPlugin($packageName, [
-            'dependencies' => [$dependency],
-            'enabled' => false,
-        ]);
-        $this->manager->install($packageName);
-
-        // Enable dependent plugin
-        $result = $this->manager->enable($packageName);
-
-        $this->assertTrue($result, 'Enabling should succeed with satisfied dependencies');
-        $this->assertTrue($this->discoverer->isEnabled($packageName));
-    }
-
-    /**
      * Test chain dependencies are checked.
      *
      * **Validates: Requirements 8.1**
@@ -364,17 +310,19 @@ class DependencyCheckIntegrationTest extends TestCase
         $pluginB = 'vendor/plugin-b';
         $pluginC = 'vendor/plugin-c';
 
-        // Create plugin A (no dependencies)
-        $this->createTestPlugin($pluginA);
+        // Create plugin A (no dependencies, enabled)
+        $this->createTestPlugin($pluginA, ['enabled' => true]);
 
-        // Create plugin B (depends on A)
+        // Create plugin B (depends on A, enabled)
         $this->createTestPlugin($pluginB, [
             'dependencies' => [$pluginA],
+            'enabled' => true,
         ]);
 
-        // Create plugin C (depends on B)
+        // Create plugin C (depends on B, enabled)
         $this->createTestPlugin($pluginC, [
             'dependencies' => [$pluginB],
+            'enabled' => true,
         ]);
 
         // Try to install C without A and B
@@ -407,18 +355,20 @@ class DependencyCheckIntegrationTest extends TestCase
         $dependent1 = 'vendor/dependent-one';
         $dependent2 = 'vendor/dependent-two';
 
-        // Create and install base plugin
-        $this->createTestPlugin($basePlugin);
+        // Create and install base plugin (enabled)
+        $this->createTestPlugin($basePlugin, ['enabled' => true]);
         $this->manager->install($basePlugin);
 
-        // Create and install two dependent plugins
+        // Create and install two dependent plugins (enabled)
         $this->createTestPlugin($dependent1, [
             'dependencies' => [$basePlugin],
+            'enabled' => true,
         ]);
         $this->manager->install($dependent1);
 
         $this->createTestPlugin($dependent2, [
             'dependencies' => [$basePlugin],
+            'enabled' => true,
         ]);
         $this->manager->install($dependent2);
 
@@ -450,14 +400,16 @@ class DependencyCheckIntegrationTest extends TestCase
     {
         $packageName = 'vendor/standalone-plugin';
 
-        // Create plugin with no dependencies
+        // Create plugin with no dependencies (enabled)
         $this->createTestPlugin($packageName, [
             'dependencies' => [],
+            'enabled' => true,
         ]);
 
         // Check dependencies
-        $missing = $this->manager->checkDependencies($packageName);
-        $this->assertEmpty($missing);
+        $result = $this->manager->checkDependencies($packageName);
+        $this->assertEmpty($result['missing']);
+        $this->assertEmpty($result['disabled']);
 
         // Install should succeed
         $result = $this->manager->install($packageName);
@@ -478,13 +430,14 @@ class DependencyCheckIntegrationTest extends TestCase
         $basePlugin = 'vendor/base-plugin';
         $dependentPlugin = 'vendor/dependent-plugin';
 
-        // Create and install base plugin
-        $this->createTestPlugin($basePlugin);
+        // Create and install base plugin (enabled)
+        $this->createTestPlugin($basePlugin, ['enabled' => true]);
         $this->manager->install($basePlugin);
 
-        // Create and install dependent plugin
+        // Create and install dependent plugin (enabled)
         $this->createTestPlugin($dependentPlugin, [
             'dependencies' => [$basePlugin],
+            'enabled' => true,
         ]);
         $this->manager->install($dependentPlugin);
 
@@ -500,9 +453,37 @@ class DependencyCheckIntegrationTest extends TestCase
      */
     public function testCheckDependenciesForNonExistentPlugin(): void
     {
-        $missing = $this->manager->checkDependencies('vendor/non-existent');
+        $result = $this->manager->checkDependencies('vendor/non-existent');
 
-        $this->assertEmpty($missing, 'Should return empty for non-existent plugin');
+        $this->assertEmpty($result['missing'], 'Should return empty for non-existent plugin');
+        $this->assertEmpty($result['disabled'], 'Should return empty for non-existent plugin');
+    }
+
+    /**
+     * Test installation fails when dependency is installed but not enabled.
+     *
+     * **Validates: Requirements 8.1**
+     */
+    public function testInstallationFailsWhenDependencyNotEnabled(): void
+    {
+        $dependency = 'vendor/base-plugin';
+        $packageName = 'vendor/dependent-plugin';
+
+        // Create and install dependency (disabled)
+        $this->createTestPlugin($dependency, ['enabled' => false]);
+        $this->manager->install($dependency);
+
+        // Create dependent plugin (enabled)
+        $this->createTestPlugin($packageName, [
+            'dependencies' => [$dependency],
+            'enabled' => true,
+        ]);
+
+        // Try to install - should fail because dependency is not enabled
+        $result = $this->manager->install($packageName);
+
+        $this->assertFalse($result, 'Installation should fail when dependency is not enabled');
+        $this->assertFalse($this->discoverer->isInstalled($packageName));
     }
 
     private function removeDirectory(string $dir): void

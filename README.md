@@ -4,7 +4,7 @@
 
 ## 特性
 
-- 🚀 **极简开发** - 只需 `plugin.json` + `Plugin.php` 即可创建插件
+- 🚀 **极简开发** - 只需 `plugin.json` 即可创建插件
 - 📦 **配置驱动** - 所有元数据在 `plugin.json` 中定义，无需编写 getter 方法
 - 🔄 **完整生命周期** - 安装、卸载、启用、禁用、启动
 - 🗃️ **数据库支持** - 自动执行迁移和数据填充
@@ -111,13 +111,7 @@ class Plugin extends AbstractPlugin
         // 清理发布的文件等操作
     }
 
-    // 启用时调用
-    public function enable(): void {}
-
-    // 禁用时调用
-    public function disable(): void {}
-
-    // 每次应用启动时调用（仅已启用的插件）
+    // 每次应用启动时调用（仅 enabled: true 的插件）
     public function boot(): void {}
 }
 ```
@@ -129,7 +123,7 @@ class Plugin extends AbstractPlugin
 ### 安装流程
 
 1. **验证** → 检查 `plugin.json` 必填字段（name, version）
-2. **依赖检查** → 自动安装缺失的本地插件依赖
+2. **依赖检查** → 检查依赖插件是否已安装且已启用，自动安装缺失的本地插件依赖
 3. **Composer 依赖** → 安装 `composer_require` 中声明的第三方包
 4. **执行迁移** → 使用 Hyperf migrate 命令执行 `Database/Migrations/` 下的迁移
 5. **执行填充** → 执行 `Database/Seeders/` 下的填充器（失败不阻塞）
@@ -190,9 +184,17 @@ php bin/hyperf.php plugin:list --json
 
 ### 1. 启用/禁用状态由用户维护
 
-插件的 `enabled` 状态完全由用户在 `plugin.json` 中手动设置，`plugin:enable` 和 `plugin:disable` 命令仅触发插件的钩子方法，不会修改配置文件。
+插件的 `enabled` 状态完全由用户在 `plugin.json` 中手动设置。设置为 `true` 后，插件会在应用启动时自动加载。
 
-### 2. publish 目录文件需自行管理
+### 2. 依赖插件必须启用
+
+安装插件时，如果 `dependencies` 中声明了依赖插件，这些依赖插件必须：
+- 已安装（有 `install.lock` 文件）
+- 已启用（`plugin.json` 中 `enabled: true`）
+
+如果依赖插件未启用，安装会失败并提示用户先启用依赖插件。
+
+### 3. publish 目录文件需自行管理
 
 `publish/` 目录下的文件（如配置文件、视图等）需要在插件的 `install()` 和 `uninstall()` 钩子中自行管理：
 
@@ -222,7 +224,7 @@ class Plugin extends AbstractPlugin
 }
 ```
 
-### 3. Composer 依赖安装说明
+### 4. Composer 依赖安装说明
 
 `composer_require` 中声明的包会被安装到主项目的 `vendor` 目录，并记录到主项目的 `composer.json` 中。这样 `composer update` 时不会丢失这些依赖。
 
@@ -232,7 +234,7 @@ class Plugin extends AbstractPlugin
 composer remove package/name
 ```
 
-### 4. 迁移由 Hyperf 管理
+### 5. 迁移由 Hyperf 管理
 
 插件的迁移文件通过 Hyperf 的 `migrate` 命令执行，迁移记录存储在 Hyperf 的 `migrations` 表中，而不是 `install.lock` 文件。
 
@@ -270,8 +272,6 @@ class ConfigProvider
 |------|----------|
 | `PluginInstalledEvent` | 安装成功后 |
 | `PluginUninstalledEvent` | 卸载成功后 |
-| `PluginEnabledEvent` | 启用钩子执行后 |
-| `PluginDisabledEvent` | 禁用钩子执行后 |
 | `PluginBootedEvent` | 启动后 |
 | `PluginMigratedEvent` | 迁移执行后 |
 | `PluginSeededEvent` | 填充执行后 |

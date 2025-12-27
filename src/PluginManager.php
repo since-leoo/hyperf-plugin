@@ -1,14 +1,6 @@
 <?php
 
 declare(strict_types=1);
-/**
- * This file is part of Hyperf.
- *
- * @link     https://www.hyperf.io
- * @document https://hyperf.wiki
- * @contact  group@hyperf.io
- * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
- */
 
 namespace SinceLeoo\Plugin;
 
@@ -23,8 +15,6 @@ use SinceLeoo\Plugin\Contract\PluginManagerInterface;
 use SinceLeoo\Plugin\Contract\PluginRepositoryInterface;
 use SinceLeoo\Plugin\Contract\SeederRunnerInterface;
 use SinceLeoo\Plugin\Event\PluginBootedEvent;
-use SinceLeoo\Plugin\Event\PluginDisabledEvent;
-use SinceLeoo\Plugin\Event\PluginEnabledEvent;
 use SinceLeoo\Plugin\Event\PluginInstalledEvent;
 use SinceLeoo\Plugin\Event\PluginMigratedEvent;
 use SinceLeoo\Plugin\Event\PluginMigrationRolledBackEvent;
@@ -87,15 +77,28 @@ class PluginManager implements PluginManagerInterface
                 return false;
             }
 
-            // 3. 自动安装依赖
+            // 3. 检查依赖（安装状态和启用状态）
             $autoInstallDeps = $options['auto_install_deps'] ?? true;
-            $missingDeps = $this->checkDependencies($packageName);
+            $depCheck = $this->checkDependencies($packageName);
 
-            if (! empty($missingDeps)) {
+            // 3.1 检查是否有未启用的依赖（必须先启用才能安装）
+            if (! empty($depCheck['disabled'])) {
+                $this->log('error', "Dependencies not enabled for {$packageName}", ['disabled' => $depCheck['disabled']]);
+                return false;
+            }
+
+            // 3.2 处理未安装的依赖
+            if (! empty($depCheck['missing'])) {
                 if ($autoInstallDeps) {
-                    $this->log('info', "Auto-installing dependencies for {$packageName}", ['dependencies' => $missingDeps]);
+                    $this->log('info', "Auto-installing dependencies for {$packageName}", ['dependencies' => $depCheck['missing']]);
 
-                    foreach ($missingDeps as $depPackage) {
+                    foreach ($depCheck['missing'] as $depPackage) {
+                        // 检查依赖插件是否已启用（在 plugin.json 中）
+                        if (! $this->discoverer->isEnabled($depPackage)) {
+                            $this->log('error', "Dependency plugin not enabled: {$depPackage}. Please set enabled: true in its plugin.json first.");
+                            return false;
+                        }
+
                         $this->log('info', "Installing dependency: {$depPackage}");
 
                         // 递归安装依赖（传递 auto_install_deps 选项）
@@ -109,7 +112,7 @@ class PluginManager implements PluginManagerInterface
                         $this->log('info', "Dependency installed successfully: {$depPackage}");
                     }
                 } else {
-                    $this->log('error', "Missing dependencies for {$packageName}", ['missing' => $missingDeps]);
+                    $this->log('error', "Missing dependencies for {$packageName}", ['missing' => $depCheck['missing']]);
                     return false;
                 }
             }
@@ -316,102 +319,19 @@ class PluginManager implements PluginManagerInterface
     }
 
     /**
-     * @see Requirements 4.1, 8.2, 10.3
-     */
-    public function enable(string $packageName): bool
-    {
-        // enabled 状态由用户在 plugin.json 中自行维护
-        // 此方法仅用于触发插件的 enable 钩子
-        try {
-            if (! $this->discoverer->isInstalled($packageName)) {
-                $this->log('error', "Cannot enable: plugin not installed: {$packageName}");
-                return false;
-            }
-
-            if (! $this->discoverer->isEnabled($packageName)) {
-                $this->log('error', "Plugin is not enabled in plugin.json: {$packageName}");
-                return false;
-            }
-
-            // 调用插件 enable 钩子
-            $pluginClass = $this->discoverer->getPluginClass($packageName);
-            if ($pluginClass !== null && class_exists($pluginClass)) {
-                $plugin = new $pluginClass();
-                if ($plugin instanceof PluginInterface) {
-                    $plugin->enable();
-                }
-            }
-
-            $pluginConfig = $this->discoverer->getPluginJsonConfig($packageName);
-            $this->dispatch(new PluginEnabledEvent($packageName, $pluginConfig));
-
-            $this->log('info', "Plugin enable hook executed: {$packageName}");
-            return true;
-        } catch (Throwable $e) {
-            $this->log('error', "Failed to enable plugin: {$packageName}", [
-                'exception' => $e->getMessage(),
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * @see Requirements 4.2, 8.2, 10.4
-     */
-    public function disable(string $packageName): bool
-    {
-        // enabled 状态由用户在 plugin.json 中自行维护
-        // 此方法仅用于触发插件的 disable 钩子
-        try {
-            if (! $this->discoverer->isInstalled($packageName)) {
-                $this->log('error', "Cannot disable: plugin not installed: {$packageName}");
-                return false;
-            }
-
-            if ($this->discoverer->isEnabled($packageName)) {
-                $this->log('error', "Plugin is still enabled in plugin.json: {$packageName}");
-                return false;
-            }
-
-            // 调用插件 disable 钩子
-            $pluginClass = $this->discoverer->getPluginClass($packageName);
-            if ($pluginClass !== null && class_exists($pluginClass)) {
-                $plugin = new $pluginClass();
-                if ($plugin instanceof PluginInterface) {
-                    $plugin->disable();
-                }
-            }
-
-            $pluginConfig = $this->discoverer->getPluginJsonConfig($packageName);
-            $this->dispatch(new PluginDisabledEvent($packageName, $pluginConfig));
-
-            $this->log('info', "Plugin disable hook executed: {$packageName}");
-            return true;
-        } catch (Throwable $e) {
-            $this->log('error', "Failed to disable plugin: {$packageName}", [
-                'exception' => $e->getMessage(),
-            ]);
-            return false;
-        }
-    }
-
-    /**
      * {@inheritdoc}
      *
      * 按优先级顺序加载插件，单个插件失败不影响其他插件。
-     *
-     * @see Requirements 3.3, 3.4, 9.2, 12.1, 12.2, 12.3
      */
     public function bootPlugins(): void
     {
         $installedPlugins = $this->discoverer->getInstalledPlugins();
-        $config = $this->configWriter->getConfig();
-        $enabledConfig = $config['enabled'] ?? [];
 
-        // 收集所有已启用的插件及其优先级
+        // 收集所有已安装且已启用的插件及其优先级
         $pluginsToLoad = [];
         foreach ($installedPlugins as $packageName => $pluginInfo) {
-            if (! ($enabledConfig[$packageName] ?? false)) {
+            // 从 plugin.json 读取 enabled 状态
+            if (!$this->discoverer->isEnabled($packageName)) {
                 continue;
             }
 
@@ -454,30 +374,41 @@ class PluginManager implements PluginManagerInterface
     }
 
     /**
+     * 检查插件依赖.
+     *
+     * 返回两类问题依赖：
+     * - missing: 未安装的依赖
+     * - disabled: 已安装但未启用的依赖
+     *
      * @see Requirements 8.1
+     * @return array{missing: array, disabled: array}
      */
     public function checkDependencies(string $packageName): array
     {
         $pluginPath = $this->discoverer->getPluginPath($packageName);
         if ($pluginPath === null) {
-            return [];
+            return ['missing' => [], 'disabled' => []];
         }
 
         $pluginConfig = $this->configReader->read($pluginPath);
         $dependencies = $this->configReader->get($pluginConfig, 'dependencies', []);
 
         if (empty($dependencies)) {
-            return [];
+            return ['missing' => [], 'disabled' => []];
         }
 
-        $missingDeps = [];
+        $missing = [];
+        $disabled = [];
+
         foreach ($dependencies as $depPackage) {
             if (! $this->discoverer->isInstalled($depPackage)) {
-                $missingDeps[] = $depPackage;
+                $missing[] = $depPackage;
+            } elseif (! $this->discoverer->isEnabled($depPackage)) {
+                $disabled[] = $depPackage;
             }
         }
 
-        return $missingDeps;
+        return ['missing' => $missing, 'disabled' => $disabled];
     }
 
     /**

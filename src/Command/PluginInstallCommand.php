@@ -97,11 +97,33 @@ class PluginInstallCommand extends HyperfCommand
             return self::FAILURE;
         }
 
-        // 检查依赖（如果有缺失依赖，会自动安装）
-        $missingDeps = $pluginManager->checkDependencies($pluginName);
-        if (! empty($missingDeps)) {
+        // 检查依赖（如果有缺失依赖，会自动安装；如果有未启用依赖，则报错）
+        $depCheck = $pluginManager->checkDependencies($pluginName);
+
+        // 检查未启用的依赖
+        if (! empty($depCheck['disabled'])) {
+            $this->error("Plugin '{$pluginName}' has dependencies that are not enabled:");
+            foreach ($depCheck['disabled'] as $dep) {
+                $this->line("  - {$dep}");
+            }
+            $this->line('');
+            $this->line('Please enable these plugins in their plugin.json files first (set "enabled": true).');
+            return self::FAILURE;
+        }
+
+        // 检查未安装的依赖
+        if (! empty($depCheck['missing'])) {
+            // 检查这些依赖是否已启用
+            foreach ($depCheck['missing'] as $dep) {
+                if (! $discoverer->isEnabled($dep)) {
+                    $this->error("Dependency plugin '{$dep}' is not enabled.");
+                    $this->line('Please set "enabled": true in its plugin.json first.');
+                    return self::FAILURE;
+                }
+            }
+
             $this->warn("Plugin '{$pluginName}' has dependencies that will be auto-installed:");
-            foreach ($missingDeps as $dep) {
+            foreach ($depCheck['missing'] as $dep) {
                 $this->line("  - {$dep}");
             }
         }
