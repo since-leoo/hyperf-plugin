@@ -158,8 +158,6 @@ class Plugin extends AbstractPlugin
 | `plugin:make [name]` | 生成插件骨架 |
 | `plugin:install <name>` | 安装插件 |
 | `plugin:uninstall <name>` | 卸载插件 |
-| `plugin:enable <name>` | 触发插件启用钩子 |
-| `plugin:disable <name>` | 触发插件禁用钩子 |
 | `plugin:list` | 查看插件列表 |
 | `plugin:seed <name>` | 执行插件填充器 |
 
