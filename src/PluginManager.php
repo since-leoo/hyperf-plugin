@@ -1,6 +1,14 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace SinceLeoo\Plugin;
 
@@ -276,7 +284,6 @@ class PluginManager implements PluginManagerInterface
                 $shouldRollback = $this->configReader->get($pluginConfig, 'rollback_on_uninstall', false);
             }
 
-            $rolledBackMigrations = [];
             if ($shouldRollback && $pluginPath !== null && $this->configReader->hasMigrations($pluginPath)) {
                 $migrationPath = $this->configReader->getMigrationPath($pluginPath);
                 try {
@@ -331,7 +338,7 @@ class PluginManager implements PluginManagerInterface
         $pluginsToLoad = [];
         foreach ($installedPlugins as $packageName => $pluginInfo) {
             // 从 plugin.json 读取 enabled 状态
-            if (!$this->discoverer->isEnabled($packageName)) {
+            if (! $this->discoverer->isEnabled($packageName)) {
                 continue;
             }
 
@@ -409,22 +416,6 @@ class PluginManager implements PluginManagerInterface
         }
 
         return ['missing' => $missing, 'disabled' => $disabled];
-    }
-
-    /**
-     * 获取插件发现器.
-     */
-    public function getDiscoverer(): PluginDiscovererInterface
-    {
-        return $this->discoverer;
-    }
-
-    /**
-     * 获取插件仓库.
-     */
-    public function getRepository(): PluginRepositoryInterface
-    {
-        return $this->repository;
     }
 
     /**

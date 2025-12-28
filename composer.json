@@ -1,6 +1,7 @@
 {
   "name": "since-leoo/hyperf-plugin",
   "type": "library",
+  "description": "一个简洁、易用的 Hyperf 插件管理系统，一键集成项目插件。",
   "license": "MIT",
   "require": {
     "php": ">=8.1",
