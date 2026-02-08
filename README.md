@@ -31,6 +31,13 @@ php bin/hyperf.php plugin:make my-plugin
 ```
 
 ### 2. 配置插件
+在 `bin/hyperf.php 文件中` 
+
+`require BASE_PATH . '/vendor/autoload.php';` 这行代码下 添加以下代码
+
+```php
+ \SinceLeoo\Plugin\PluginBootstrap::init();
+```
 
 编辑 `plugins/my-plugin/plugin.json`，设置 `enabled: true` 启用插件。
 
